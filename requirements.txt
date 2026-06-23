@@ -1,0 +1,5 @@
+groq
+langgraph
+langchain-core
+openbb-core
+openbb-sec

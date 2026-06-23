@@ -1,0 +1,15 @@
+.env
+.openbb_platform/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+workspace/to_be_extracted/*
+!workspace/to_be_extracted/.gitkeep
+
+workspace/extractions/*
+!workspace/extractions/.gitkeep
+
+workspace/manifests/*
+!workspace/manifests/.gitkeep
