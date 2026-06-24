@@ -14,4 +14,4 @@ workspace/extractions/*
 workspace/manifests/*
 !workspace/manifests/.gitkeep
 .DS_Store
-OPENBB_LINKEDIN_BLOG.md
+OPENBB_LINKEDIN_BLOG.md.DS_Store
