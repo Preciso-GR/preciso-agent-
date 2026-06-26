@@ -3,14 +3,14 @@ from __future__ import annotations
 from pathlib import Path
 
 from config import Settings
-from groq_client import GroqAgentClient
+from agent_llm import AgentLLM
 from models import ExtractionArtifact, NormalizedSourceDocument
 from storage.files import slugify, write_extraction_payload
 
 
 def build_extractions(
     settings: Settings,
-    groq_client: GroqAgentClient,
+    llm: AgentLLM,
     documents: list[NormalizedSourceDocument],
 ) -> list[ExtractionArtifact]:
     artifacts: list[ExtractionArtifact] = []
@@ -28,7 +28,7 @@ def build_extractions(
             continue
 
         source_path = Path(document.output_path)
-        payload = groq_client.extract_graph_payload(
+        payload = llm.extract_graph_payload(
             document_id=document.document_id,
             file_path=str(source_path),
             markdown=source_path.read_text(encoding="utf-8"),

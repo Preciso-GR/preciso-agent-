@@ -25,8 +25,13 @@ _load_env_file(PROJECT_ROOT / ".env")
 
 @dataclass(frozen=True)
 class Settings:
+    llm_provider: str
     groq_api_key: str
     groq_model: str
+    anthropic_api_key: str
+    anthropic_model: str
+    bedrock_model: str
+    aws_region: str
     preciso_repo_root: Path
     workspace_root: Path
     sources_dir: Path
@@ -66,9 +71,20 @@ def get_settings() -> Settings:
         else (str(default_launcher),)
     )
 
+    # Which LLM drives intent parsing, extraction, and synthesis:
+    #   "groq"      -> Groq-hosted open models (default; OpenAI-style JSON mode)
+    #   "anthropic" -> Claude via the Anthropic API
+    #   "bedrock"   -> Claude via Amazon Bedrock (AWS-native auth + billing)
+    llm_provider = (os.getenv("LLM_PROVIDER", "groq").strip().lower() or "groq")
+
     return Settings(
+        llm_provider=llm_provider,
         groq_api_key=os.getenv("GROQ_API_KEY", "").strip(),
         groq_model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile").strip(),
+        anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", "").strip(),
+        anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-opus-4-8").strip(),
+        bedrock_model=os.getenv("BEDROCK_MODEL", "anthropic.claude-opus-4-8").strip(),
+        aws_region=(os.getenv("AWS_REGION") or os.getenv("BEDROCK_REGION") or "us-east-1").strip(),
         preciso_repo_root=preciso_repo_root,
         workspace_root=workspace_root,
         sources_dir=workspace_root / "to_be_extracted",

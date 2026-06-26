@@ -5,8 +5,8 @@ from typing import Any
 from langgraph.graph import END, START, StateGraph
 
 from config import Settings
+from agent_llm import AgentLLM
 from extraction import build_extractions
-from groq_client import GroqAgentClient
 from models import (
     AgentState,
     ParsedIntent,
@@ -22,7 +22,7 @@ from storage.files import write_source_documents
 class PrecisoAgentWorkflow:
     def __init__(self, settings: Settings):
         self.settings = settings
-        self.groq_client = GroqAgentClient(settings)
+        self.llm = AgentLLM(settings)
         self.openbb_provider = OpenBBProvider(settings)
         self.local_provider = LocalFolderProvider(settings)
         self.preciso_client = build_preciso_client(settings)
@@ -75,7 +75,7 @@ class PrecisoAgentWorkflow:
         return workflow.compile()
 
     def _parse_intent(self, state: AgentState) -> AgentState:
-        intent = self.groq_client.parse_intent(state["user_prompt"])
+        intent = self.llm.parse_intent(state["user_prompt"])
         return {"parsed_intent": intent}
 
     def _route_after_intent(self, state: AgentState) -> str:
@@ -127,7 +127,7 @@ class PrecisoAgentWorkflow:
             return {"extraction_artifacts": []}
         artifacts = build_extractions(
             self.settings,
-            self.groq_client,
+            self.llm,
             state.get("normalized_documents", []),
         )
         return {"extraction_artifacts": artifacts}
@@ -183,5 +183,5 @@ class PrecisoAgentWorkflow:
             "query_result": state.get("query_result"),
             "errors": state.get("errors", []),
         }
-        summary = self.groq_client.summarize_run(state["user_prompt"], run_context)
+        summary = self.llm.summarize_run(state["user_prompt"], run_context)
         return {"final_response": summary}

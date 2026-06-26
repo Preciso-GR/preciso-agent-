@@ -12,6 +12,7 @@ def main() -> int:
     workflow = PrecisoAgentWorkflow(settings)
 
     print("Preciso Agent")
+    print(f"LLM provider: {settings.llm_provider}")
     print(f"Data: OpenBB SEC + local inbox ({settings.inbox_dir})")
     print(f"Graph engine: Preciso via {settings.preciso_client_mode} backend")
     print("Type 'quit' to exit.\n")

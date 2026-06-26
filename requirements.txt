@@ -1,6 +1,10 @@
 groq
+anthropic
 langgraph
 langchain-core
 mcp
 openbb-core
 openbb-sec
+
+# For LLM_PROVIDER=bedrock, install the AWS extra instead of bare anthropic:
+#   pip install 'anthropic[bedrock]'

@@ -3,9 +3,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from groq import Groq
-
 from config import Settings
+from llm import build_llm_provider
 from models import ParsedIntent
 
 
@@ -77,24 +76,33 @@ Rules:
 """
 
 
-class GroqAgentClient:
+SUMMARY_SYSTEM_PROMPT = (
+    "You are a concise financial workflow assistant. Summarize what was fetched, "
+    "stored, ingested, and optionally answered. Keep it grounded in the provided JSON."
+)
+
+
+class AgentLLM:
+    """Provider-agnostic agent brain.
+
+    Owns the orchestration prompts (intent, extraction, synthesis) and routes
+    them through the configured LLM provider (Groq, Anthropic, or Bedrock).
+    Falls back to deterministic heuristics when no provider is configured.
+    """
+
     def __init__(self, settings: Settings):
         self.settings = settings
-        self._client = Groq(api_key=settings.groq_api_key) if settings.groq_api_key else None
+        self.provider = build_llm_provider(settings)
 
     @property
     def available(self) -> bool:
-        return self._client is not None
+        return self.provider.available
 
     def parse_intent(self, user_prompt: str) -> ParsedIntent:
-        if not self._client:
+        if not self.provider.available:
             return _fallback_intent(user_prompt)
 
-        raw = self._chat_json(
-            system_prompt=INTENT_SYSTEM_PROMPT,
-            user_prompt=user_prompt,
-            temperature=0,
-        )
+        raw = self.provider.complete_json(system=INTENT_SYSTEM_PROMPT, user=user_prompt)
         try:
             return ParsedIntent.model_validate(json.loads(raw))
         except Exception:
@@ -107,7 +115,7 @@ class GroqAgentClient:
         file_path: str,
         markdown: str,
     ) -> dict[str, Any]:
-        if not self._client:
+        if not self.provider.available:
             return _fallback_extraction(document_id=document_id, file_path=file_path, markdown=markdown)
 
         prompt = (
@@ -116,11 +124,7 @@ class GroqAgentClient:
             "Document follows:\n"
             f"{markdown}"
         )
-        raw = self._chat_json(
-            system_prompt=EXTRACTION_SYSTEM_PROMPT,
-            user_prompt=prompt,
-            temperature=0,
-        )
+        raw = self.provider.complete_json(system=EXTRACTION_SYSTEM_PROMPT, user=prompt)
         try:
             parsed = json.loads(raw)
         except json.JSONDecodeError:
@@ -129,38 +133,12 @@ class GroqAgentClient:
         return parsed
 
     def summarize_run(self, prompt: str, run_context: dict[str, Any]) -> str:
-        if not self._client:
+        if not self.provider.available:
             return _fallback_summary(prompt, run_context)
-        response = self._client.chat.completions.create(
-            model=self.settings.groq_model,
-            temperature=0.2,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a concise financial workflow assistant. Summarize what was fetched, "
-                        "stored, ingested, and optionally answered. Keep it grounded in the provided JSON."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": json.dumps({"prompt": prompt, "run_context": run_context}, indent=2),
-                },
-            ],
+        user = json.dumps({"prompt": prompt, "run_context": run_context}, indent=2)
+        return self.provider.complete_text(system=SUMMARY_SYSTEM_PROMPT, user=user) or _fallback_summary(
+            prompt, run_context
         )
-        return response.choices[0].message.content or _fallback_summary(prompt, run_context)
-
-    def _chat_json(self, *, system_prompt: str, user_prompt: str, temperature: float) -> str:
-        response = self._client.chat.completions.create(
-            model=self.settings.groq_model,
-            temperature=temperature,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-        )
-        return response.choices[0].message.content or "{}"
 
 
 def _fallback_intent(user_prompt: str) -> ParsedIntent:
@@ -258,4 +236,3 @@ def _fallback_summary(prompt: str, run_context: dict[str, Any]) -> str:
     if query:
         lines.append(f"Graph query status: {query.get('status', 'unknown')}.")
     return "\n".join(lines)
-

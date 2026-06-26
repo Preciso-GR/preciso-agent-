@@ -1,9 +1,14 @@
 # Preciso Agent
 
 `preciso-agent` is a local chat agent that uses:
-- **OpenBB** as the data provider layer
-- **Groq** as the orchestration and extraction model
+- **OpenBB** (SEC data) or a **local inbox folder** as the data source
+- A **pluggable LLM provider** — Groq, Anthropic (Claude), or Amazon Bedrock — for orchestration and extraction
 - **Preciso** from the parent repo as the graph ingestion and query engine
+
+> **What is this for?** `preciso-agent` is not a competing product to `preciso-graphrag`.
+> It is (1) the OpenBB co-marketing demo and (2) a headless reference pipeline showing
+> how to drive a Preciso graph end-to-end — provider → extract → ingest → query — with
+> no human in the loop. The interactive, skill-driven workflow lives in the parent repo.
 
 ## Workflow
 
@@ -31,18 +36,53 @@ In practice:
 1. The agent reads your prompt and decides whether it needs to fetch data or query the existing graph.
 2. If it needs data, `providers/openbb_provider.py` calls OpenBB fetchers for SEC filings, management discussion, and optional earnings context.
 3. The fetched material is written into `workspace/to_be_extracted/` as Markdown and `workspace/manifests/` as provenance records.
-4. Groq converts the source text into Preciso-compatible graph extraction JSON.
+4. The configured LLM provider converts the source text into Preciso-compatible graph extraction JSON.
 5. Preciso ingests the JSON and the agent can optionally query the graph afterward.
 
 This is a good fit when you want one standardized source layer for finance workflows instead of wiring each vendor directly into the graph pipeline.
 
+## LLM providers
+
+The agent's brain (intent parsing, extraction, synthesis) runs through one
+pluggable provider, selected by `LLM_PROVIDER`:
+
+| `LLM_PROVIDER` | SDK / auth | Default model |
+|----------------|------------|---------------|
+| `groq` (default) | `GROQ_API_KEY` | `llama-3.3-70b-versatile` |
+| `anthropic` | `ANTHROPIC_API_KEY` | `claude-opus-4-8` |
+| `bedrock` | standard AWS credential chain + `AWS_REGION` | `anthropic.claude-opus-4-8` |
+
+Groq uses OpenAI-style JSON mode; Anthropic and Bedrock are prompt-driven (the
+current Claude models have no JSON mode and reject sampling params), so the
+provider layer adapts the call shape per backend — the prompts stay identical.
+
+For Bedrock, install the AWS extra: `pip install 'anthropic[bedrock]'`.
+
 ## Environment
 
-Create `preciso-agent/.env` with:
+Create `preciso-agent/.env`. For the default Groq provider:
 
 ```bash
+LLM_PROVIDER=groq
 GROQ_API_KEY=your_key_here
 GROQ_MODEL=llama-3.3-70b-versatile
+```
+
+For Claude via the Anthropic API:
+
+```bash
+LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=your_key_here
+ANTHROPIC_MODEL=claude-opus-4-8
+```
+
+For Claude via Amazon Bedrock (AWS-native auth + billing):
+
+```bash
+LLM_PROVIDER=bedrock
+AWS_REGION=us-east-1
+BEDROCK_MODEL=anthropic.claude-opus-4-8
+# AWS credentials come from the standard chain (env vars, profile, or role)
 ```
 
 Optional:

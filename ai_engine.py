@@ -1,9 +1,8 @@
 from __future__ import annotations
 
+from agent_llm import AgentLLM
 from config import get_settings
-from groq_client import GroqAgentClient
 
 
 settings = get_settings()
-llm_engine = GroqAgentClient(settings)
-
+llm_engine = AgentLLM(settings)
