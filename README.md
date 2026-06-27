@@ -21,7 +21,10 @@
 
 ## Current v1 data path
 
-- SEC filing metadata
+- SEC filing full document text (downloaded from EDGAR via the filing's `report_url`,
+  HTML-stripped, XBRL preamble trimmed). `SEC_FILING_MODE=truncate` ingests one
+  capped document; `SEC_FILING_MODE=chunks` splits the whole filing across several
+  documents so the full text is covered (the graph merges entities across chunks).
 - Management discussion and analysis text
 - Earnings context placeholder document
 
@@ -92,6 +95,16 @@ PRECISO_REPO_ROOT=/absolute/path/to/preciso-graphrag
 PRECISO_AGENT_WORKSPACE=/absolute/path/to/workspace
 OPENBB_SEC_FORM_TYPES=10-K,10-Q,8-K
 PRECISO_QUERY_MODE=mix
+
+# SEC EDGAR requires a descriptive User-Agent on document downloads.
+SEC_USER_AGENT=Your Name your@email.com
+# How much of a filing to ingest:
+#   truncate (default) -> one document, capped at SEC_FILING_MAX_CHARS
+#   chunks             -> split the whole filing into SEC_FILING_MAX_CHARS-sized
+#                         pieces (up to SEC_FILING_MAX_CHUNKS) so nothing is dropped
+SEC_FILING_MODE=truncate
+SEC_FILING_MAX_CHARS=50000
+SEC_FILING_MAX_CHUNKS=6
 
 # How the agent reaches the Preciso graph engine.
 #   mcp       -> talk to the graphrag-mcp stdio server (default; same product

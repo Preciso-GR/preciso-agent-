@@ -1,13 +1,32 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import json
 import os
+import re
+import urllib.error
+import urllib.request
 from datetime import datetime
 from typing import Any
 
 from config import Settings
 from models import NormalizedSourceDocument, ProviderRequest
+
+# The SEC requires a descriptive User-Agent on EDGAR document requests and will
+# block requests without one. Override via SEC_USER_AGENT (e.g. "name email").
+SEC_USER_AGENT = os.getenv("SEC_USER_AGENT", "preciso-agent (contact@example.com)")
+
+# How much of a filing to ingest, and how:
+#   SEC_FILING_MODE = "truncate" (default) -> one document, capped at MAX_CHARS.
+#                     "chunks"             -> split the whole filing into pieces
+#                                             of MAX_CHARS each (up to MAX_CHUNKS),
+#                                             so the full document is covered.
+# Raise SEC_FILING_MAX_CHARS to ingest more text per document/chunk (0 = no cap,
+# only meaningful in truncate mode). A full 10-K is ~200K+ chars.
+SEC_FILING_MODE = (os.getenv("SEC_FILING_MODE", "truncate").strip().lower() or "truncate")
+SEC_FILING_MAX_CHARS = int(os.getenv("SEC_FILING_MAX_CHARS", "50000"))
+SEC_FILING_MAX_CHUNKS = int(os.getenv("SEC_FILING_MAX_CHUNKS", "6"))
 
 
 class OpenBBProvider:
@@ -55,38 +74,60 @@ class OpenBBProvider:
                     or getattr(filing, "filing_detail_url", None)
                     or ""
                 )
-                body = (
-                    self._render_filing_raw(
-                        symbol=filing_symbol,
-                        payload=filing_payload,
+                base_metadata = {
+                    "symbol": filing_symbol,
+                    "report_type": filing.report_type,
+                    "report_date": str(filing.report_date),
+                    "filing_url": str(
+                        getattr(filing, "filing_url", None)
+                        or getattr(filing, "filing_detail_url", None)
+                        or ""
+                    ),
+                    "report_url": str(filing.report_url or ""),
+                    "primary_doc_description": str(filing.primary_doc_description or ""),
+                }
+
+                # Download the actual filing document at report_url; fall back to
+                # the metadata-only render if the document can't be fetched.
+                filing_text = self._download_filing_text(filing_reference)
+                if filing_text:
+                    segments = self._segment_filing_text(filing_text)
+                else:
+                    segments = [
+                        self._render_filing_raw(symbol=filing_symbol, payload=filing_payload)
+                        if source_format == "raw"
+                        else self._render_filing_summary(filing)
+                    ]
+
+                total = len(segments)
+                for idx, segment in enumerate(segments, start=1):
+                    suffix = f"_part{idx}" if total > 1 else ""
+                    part_label = f" (part {idx}/{total})" if total > 1 else ""
+                    body = (
+                        self._render_filing_document(
+                            symbol=filing_symbol,
+                            report_type=str(filing.report_type),
+                            filing_date=str(filing.filing_date),
+                            url=filing_reference,
+                            text=segment,
+                            part_label=part_label,
+                        )
+                        if filing_text
+                        else segment
                     )
-                    if source_format == "raw"
-                    else self._render_filing_summary(filing)
-                )
-                docs.append(
-                    NormalizedSourceDocument(
-                        document_id=f"{filing_symbol}_{filing.report_type}_{filing.filing_date}",
-                        title=f"{filing_symbol} {filing.report_type} filed {filing.filing_date}",
-                        source_type="sec_filing",
-                        ticker=filing_symbol,
-                        source_reference=filing_reference,
-                        event_date=str(filing.filing_date),
-                        fetch_timestamp=fetched_at,
-                        body_markdown=body,
-                        metadata={
-                            "symbol": filing_symbol,
-                            "report_type": filing.report_type,
-                            "report_date": str(filing.report_date),
-                            "filing_url": str(
-                                getattr(filing, "filing_url", None)
-                                or getattr(filing, "filing_detail_url", None)
-                                or ""
-                            ),
-                            "report_url": str(filing.report_url or ""),
-                            "primary_doc_description": str(filing.primary_doc_description or ""),
-                        },
+                    docs.append(
+                        NormalizedSourceDocument(
+                            document_id=f"{filing_symbol}_{filing.report_type}_{filing.filing_date}{suffix}",
+                            title=f"{filing_symbol} {filing.report_type} filed {filing.filing_date}{part_label}",
+                            source_type="sec_filing",
+                            ticker=filing_symbol,
+                            source_reference=filing_reference,
+                            event_date=str(filing.filing_date),
+                            fetch_timestamp=fetched_at,
+                            body_markdown=body,
+                            metadata={**base_metadata, "part": idx, "parts_total": total},
+                        )
                     )
-                )
 
         if "management_discussion" in request.source_types:
             mda = await SecManagementDiscussionAnalysisFetcher.fetch_data(
@@ -137,6 +178,77 @@ class OpenBBProvider:
             )
 
         return docs
+
+    @staticmethod
+    def _download_filing_text(url: str) -> str | None:
+        """Fetch the actual SEC filing document and reduce it to readable text.
+
+        Returns None on any failure (missing URL, network error, empty body) so
+        the caller can fall back to the metadata-only render.
+        """
+        if not url:
+            return None
+        try:
+            request = urllib.request.Request(url, headers={"User-Agent": SEC_USER_AGENT})
+            with urllib.request.urlopen(request, timeout=30) as response:
+                raw = response.read().decode("utf-8", errors="replace")
+        except (urllib.error.URLError, ValueError, TimeoutError, OSError):
+            return None
+
+        # Drop script/style blocks, then strip remaining tags and collapse space.
+        without_blocks = re.sub(
+            r"<(script|style)\b[^>]*>.*?</\1>", " ", raw, flags=re.IGNORECASE | re.DOTALL
+        )
+        text = html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", without_blocks))).strip()
+        if not text:
+            return None
+
+        # Inline-XBRL filings begin with a large block of taxonomy/metadata noise.
+        # Skip to the cover page so the ingested body is the readable filing.
+        anchors = ("UNITED STATES SECURITIES AND EXCHANGE COMMISSION", "FORM 10-K", "FORM 10-Q", "FORM 8-K")
+        starts = [text.find(a) for a in anchors]
+        starts = [pos for pos in starts if pos != -1]
+        if starts:
+            text = text[min(starts):].strip()
+        return text or None
+
+    @staticmethod
+    def _segment_filing_text(text: str) -> list[str]:
+        """Split filing text into ingestion segments per SEC_FILING_MODE.
+
+        truncate -> a single (optionally capped) segment.
+        chunks   -> consecutive slices of SEC_FILING_MAX_CHARS, up to MAX_CHUNKS,
+                    so the whole filing is covered across multiple documents.
+        """
+        if SEC_FILING_MODE == "chunks" and SEC_FILING_MAX_CHARS > 0:
+            size = SEC_FILING_MAX_CHARS
+            pieces = [text[i : i + size] for i in range(0, len(text), size)]
+            if SEC_FILING_MAX_CHUNKS and len(pieces) > SEC_FILING_MAX_CHUNKS:
+                pieces = pieces[:SEC_FILING_MAX_CHUNKS]
+                pieces[-1] = pieces[-1].rstrip() + "\n\n[... filing truncated: raised SEC_FILING_MAX_CHUNKS to ingest more ...]"
+            return [p.strip() for p in pieces if p.strip()]
+
+        # truncate mode (default)
+        if SEC_FILING_MAX_CHARS and len(text) > SEC_FILING_MAX_CHARS:
+            text = text[:SEC_FILING_MAX_CHARS].rstrip() + "\n\n[... filing truncated: raise SEC_FILING_MAX_CHARS or use SEC_FILING_MODE=chunks ...]"
+        return [text]
+
+    @staticmethod
+    def _render_filing_document(
+        *, symbol: str, report_type: str, filing_date: str, url: str, text: str, part_label: str = ""
+    ) -> str:
+        return "\n".join(
+            [
+                f"# {symbol} {report_type} filing (full document){part_label}",
+                "",
+                f"- Filing date: {filing_date}",
+                f"- Source URL: {url}",
+                "",
+                "## Filing text",
+                "",
+                text,
+            ]
+        )
 
     @staticmethod
     def _render_filing_summary(filing: Any) -> str:
