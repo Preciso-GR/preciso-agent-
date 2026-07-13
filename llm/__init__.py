@@ -7,11 +7,15 @@ from llm.base import LLMProvider
 def build_llm_provider(settings: Settings) -> LLMProvider:
     """Construct the configured LLM provider.
 
-    ``groq`` (default), ``anthropic``, or ``bedrock`` — selected by
+    ``groq`` (default), ``nebius``, ``anthropic``, or ``bedrock`` — selected by
     ``LLM_PROVIDER``. Providers import their SDKs lazily, so installing only the
     one you use is enough.
     """
     provider = settings.llm_provider
+    if provider == "nebius":
+        from llm.nebius_provider import NebiusProvider
+
+        return NebiusProvider(settings)
     if provider == "anthropic":
         from llm.anthropic_provider import AnthropicProvider
 
@@ -26,7 +30,7 @@ def build_llm_provider(settings: Settings) -> LLMProvider:
         return GroqProvider(settings)
 
     raise ValueError(
-        f"Unknown LLM_PROVIDER '{provider}'. Use one of: groq, anthropic, bedrock."
+        f"Unknown LLM_PROVIDER '{provider}'. Use one of: groq, nebius, anthropic, bedrock."
     )
 
 
