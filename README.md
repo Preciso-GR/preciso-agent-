@@ -197,7 +197,5 @@ If you want the agent to use a different workspace or a different Preciso checko
 - The agent uses a local `HOME` override while fetching OpenBB data so OpenBB cache/settings stay inside this project instead of trying to write to the global home directory.
 - Streamlit is intentionally out of scope for v1. The primary entrypoint is the CLI chat loop.
 
-## LinkedIn blog draft
 
-See [OPENBB_LINKEDIN_BLOG.md](OPENBB_LINKEDIN_BLOG.md) for a ready-to-post LinkedIn draft and a longer blog version.
 
