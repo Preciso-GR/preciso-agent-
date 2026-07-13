@@ -33,11 +33,11 @@ product surface.
 ## 1. Clone both repos
 
 ```bash
-git clone https://github.com/<org>/preciso-agent.git
+git clone https://github.com/Preciso-GR/preciso-agent-.git preciso-agent
 cd preciso-agent
 
 # The graph engine goes INSIDE the agent folder (it's gitignored here).
-git clone https://github.com/<org>/preciso-graphrag.git
+git clone https://github.com/Preciso-GR/preciso-graphrag.git
 ```
 
 The agent auto-detects the nested checkout — no path configuration needed. If
