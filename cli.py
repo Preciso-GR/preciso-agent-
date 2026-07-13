@@ -3,18 +3,24 @@ from __future__ import annotations
 import sys
 
 from agent.workflow import PrecisoAgentWorkflow
+from banner import print_banner
 from config import ensure_workspace, get_settings
 
 
 def main() -> int:
     settings = get_settings()
     ensure_workspace(settings)
-    workflow = PrecisoAgentWorkflow(settings)
 
-    print("Preciso Agent")
-    print(f"LLM provider: {settings.llm_provider}")
-    print(f"Data: OpenBB SEC + local inbox ({settings.inbox_dir})")
-    print(f"Graph engine: Preciso via {settings.preciso_client_mode} backend")
+    print_banner(
+        [
+            ("LLM provider", settings.llm_provider),
+            ("Data sources", f"OpenBB SEC + local inbox ({settings.inbox_dir})"),
+            ("Graph engine", f"Preciso via {settings.preciso_client_mode} backend"),
+            ("Preciso repo", str(settings.preciso_repo_root)),
+        ]
+    )
+
+    workflow = PrecisoAgentWorkflow(settings)
     print("Type 'quit' to exit.\n")
 
     while True:

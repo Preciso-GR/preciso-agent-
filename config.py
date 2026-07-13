@@ -23,11 +23,36 @@ PARENT_PRECIOSO_ROOT = PROJECT_ROOT.parent
 _load_env_file(PROJECT_ROOT / ".env")
 
 
+def _resolve_preciso_repo_root() -> Path:
+    """Locate the preciso-graphrag checkout that hosts the MCP server.
+
+    Standalone users clone preciso-graphrag *inside* this agent folder;
+    workspace users have it as a sibling directory. ``PRECISO_REPO_ROOT``
+    always wins when set.
+    """
+    env_root = os.getenv("PRECISO_REPO_ROOT", "").strip()
+    if env_root:
+        return Path(env_root).resolve()
+
+    candidates = (
+        PROJECT_ROOT / "preciso-graphrag",         # cloned inside the agent folder
+        PARENT_PRECIOSO_ROOT / "preciso-graphrag",  # sibling checkout (PRECISO workspace)
+        PARENT_PRECIOSO_ROOT,                       # legacy: agent nested in the repo itself
+    )
+    for candidate in candidates:
+        if (candidate / "mcp" / "server.py").exists():
+            return candidate.resolve()
+    return PARENT_PRECIOSO_ROOT.resolve()
+
+
 @dataclass(frozen=True)
 class Settings:
     llm_provider: str
     groq_api_key: str
     groq_model: str
+    nebius_api_key: str
+    nebius_model: str
+    nebius_base_url: str
     anthropic_api_key: str
     anthropic_model: str
     bedrock_model: str
@@ -49,9 +74,7 @@ class Settings:
 
 def get_settings() -> Settings:
     workspace_root = Path(os.getenv("PRECISO_AGENT_WORKSPACE", PROJECT_ROOT / "workspace")).resolve()
-    preciso_repo_root = Path(
-        os.getenv("PRECISO_REPO_ROOT", PARENT_PRECIOSO_ROOT)
-    ).resolve()
+    preciso_repo_root = _resolve_preciso_repo_root()
     openbb_home = Path(os.getenv("OPENBB_HOME", PROJECT_ROOT / ".openbb_platform")).resolve()
     inbox_dir = Path(os.getenv("PRECISO_AGENT_INBOX", workspace_root / "inbox")).resolve()
 
@@ -73,6 +96,7 @@ def get_settings() -> Settings:
 
     # Which LLM drives intent parsing, extraction, and synthesis:
     #   "groq"      -> Groq-hosted open models (default; OpenAI-style JSON mode)
+    #   "nebius"    -> open models on Nebius Token Factory (OpenAI-compatible API)
     #   "anthropic" -> Claude via the Anthropic API
     #   "bedrock"   -> Claude via Amazon Bedrock (AWS-native auth + billing)
     llm_provider = (os.getenv("LLM_PROVIDER", "groq").strip().lower() or "groq")
@@ -81,6 +105,12 @@ def get_settings() -> Settings:
         llm_provider=llm_provider,
         groq_api_key=os.getenv("GROQ_API_KEY", "").strip(),
         groq_model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile").strip(),
+        nebius_api_key=os.getenv("NEBIUS_API_KEY", "").strip(),
+        nebius_model=os.getenv("NEBIUS_MODEL", "meta-llama/Llama-3.3-70B-Instruct").strip(),
+        nebius_base_url=(
+            os.getenv("NEBIUS_BASE_URL", "https://api.tokenfactory.nebius.com/v1/").strip()
+            or "https://api.tokenfactory.nebius.com/v1/"
+        ),
         anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", "").strip(),
         anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-opus-4-8").strip(),
         bedrock_model=os.getenv("BEDROCK_MODEL", "anthropic.claude-opus-4-8").strip(),

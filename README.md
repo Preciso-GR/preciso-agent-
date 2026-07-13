@@ -2,13 +2,16 @@
 
 `preciso-agent` is a local chat agent that uses:
 - **OpenBB** (SEC data) or a **local inbox folder** as the data source
-- A **pluggable LLM provider** — Groq, Anthropic (Claude), or Amazon Bedrock — for orchestration and extraction
-- **Preciso** from the parent repo as the graph ingestion and query engine
+- A **pluggable LLM provider** — Groq, Nebius Token Factory, Anthropic (Claude), or Amazon Bedrock — for orchestration and extraction
+- **Preciso** (`preciso-graphrag`) as the graph ingestion and query engine
 
 > **What is this for?** `preciso-agent` is not a competing product to `preciso-graphrag`.
 > It is (1) the OpenBB co-marketing demo and (2) a headless reference pipeline showing
 > how to drive a Preciso graph end-to-end — provider → extract → ingest → query — with
 > no human in the loop. The interactive, skill-driven workflow lives in the parent repo.
+
+**First time here?** Follow the step-by-step **[Setup Guide](docs/SETUP.md)** —
+clone, install, configure a provider, and run your first ingestion in ~5 minutes.
 
 ## Workflow
 
@@ -52,12 +55,15 @@ pluggable provider, selected by `LLM_PROVIDER`:
 | `LLM_PROVIDER` | SDK / auth | Default model |
 |----------------|------------|---------------|
 | `groq` (default) | `GROQ_API_KEY` | `llama-3.3-70b-versatile` |
+| `nebius` | `NEBIUS_API_KEY` | `meta-llama/Llama-3.3-70B-Instruct` |
 | `anthropic` | `ANTHROPIC_API_KEY` | `claude-opus-4-8` |
 | `bedrock` | standard AWS credential chain + `AWS_REGION` | `anthropic.claude-opus-4-8` |
 
-Groq uses OpenAI-style JSON mode; Anthropic and Bedrock are prompt-driven (the
-current Claude models have no JSON mode and reject sampling params), so the
-provider layer adapts the call shape per backend — the prompts stay identical.
+Groq and Nebius use OpenAI-style JSON mode (Nebius Token Factory exposes an
+OpenAI-compatible API, so the `openai` SDK is pointed at the Nebius base URL);
+Anthropic and Bedrock are prompt-driven (the current Claude models have no
+JSON mode and reject sampling params), so the provider layer adapts the call
+shape per backend — the prompts stay identical.
 
 For Bedrock, install the AWS extra: `pip install 'anthropic[bedrock]'`.
 
@@ -69,6 +75,15 @@ Create `preciso-agent/.env`. For the default Groq provider:
 LLM_PROVIDER=groq
 GROQ_API_KEY=your_key_here
 GROQ_MODEL=llama-3.3-70b-versatile
+```
+
+For open models on Nebius Token Factory (OpenAI-compatible API):
+
+```bash
+LLM_PROVIDER=nebius
+NEBIUS_API_KEY=your_key_here
+NEBIUS_MODEL=meta-llama/Llama-3.3-70B-Instruct
+# NEBIUS_BASE_URL=https://api.tokenfactory.nebius.com/v1/   # override if needed
 ```
 
 For Claude via the Anthropic API:
@@ -132,12 +147,33 @@ The agent can build the graph from two source layers:
 The agent picks the source from your prompt — mention "my files", "the inbox", or
 "the folder" to use local documents; otherwise it defaults to OpenBB SEC data.
 
+## Getting Preciso (the graph engine)
+
+The agent drives a `preciso-graphrag` checkout — that repo hosts the
+`graphrag-mcp` server and the knowledge graph itself. It is looked up in this
+order:
+
+1. `PRECISO_REPO_ROOT` in `.env`, when set
+2. `preciso-graphrag/` cloned **inside this agent folder** (the standalone setup):
+   ```bash
+   cd preciso-agent
+   git clone https://github.com/Preciso-GR/preciso-graphrag.git
+   ```
+3. A sibling `preciso-graphrag/` checkout (the PRECISO workspace layout)
+
+Full install steps (venv, both requirements files, `.env`, first prompts,
+troubleshooting) are in the [Setup Guide](docs/SETUP.md).
+
 ## Run
 
 ```bash
 cd preciso-agent
 python3 main.py
 ```
+
+Startup shows the PRECISO wordmark in the red-velvet terminal theme along with
+the active LLM provider, data sources, and graph backend (set `NO_COLOR=1` to
+disable the colors), then drops into the chat loop.
 
 If you want the agent to use a different workspace or a different Preciso checkout, set `PRECISO_AGENT_WORKSPACE` and `PRECISO_REPO_ROOT` in `.env` before running.
 

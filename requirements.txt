@@ -1,4 +1,5 @@
 groq
+openai  # Nebius Token Factory (OpenAI-compatible API)
 anthropic
 langgraph
 langchain-core

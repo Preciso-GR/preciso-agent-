@@ -1,5 +1,8 @@
 .env
 .openbb_platform/
+
+# Standalone setup: preciso-graphrag cloned inside the agent folder
+preciso-graphrag/
 __pycache__/
 *.pyc
 *.pyo
@@ -16,3 +19,4 @@ workspace/manifests/*
 .DS_Store
 OPENBB_LINKEDIN_BLOG.md
 .DS_Store
+CLAUDE.md
